@@ -307,7 +307,7 @@ def load_data(file_path):
 
 
 # Global Dataset Path
-FILE_PATH = './datasets/Vehicles_10-24.csv'
+FILE_PATH = './Vehicles_10-24.csv'
 # Load data
 data = load_data(FILE_PATH)
 

@@ -4,7 +4,7 @@ numpy
 scikit-learn
 tensorflow
 plotly
-bokeh
+bokeh==2.4.3
 psutil
 matplotlib
 seaborn

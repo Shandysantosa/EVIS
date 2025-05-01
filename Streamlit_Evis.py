@@ -9,8 +9,6 @@ from tensorflow.keras.layers import Dense, MultiHeadAttention, LayerNormalizatio
 from tensorflow.keras.layers import Conv1D, LSTM, Flatten
 import plotly.express as px
 from datetime import datetime
-from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource, NumeralTickFormatter
 import plotly.graph_objects as go
 import psutil
 from tensorflow.keras.callbacks import EarlyStopping
@@ -815,17 +813,8 @@ def forecast_co2_emissions(df):
         with c1:
             st.dataframe(df_fc)
         with c2:
-            src = ColumnDataSource(df_fc)
-            p = figure(
-                title="CO₂ Emissions Forecast",
-                x_axis_label="Year",
-                y_axis_label="Emissions (g/km)",
                 width=700, height=400
             )
-            p.line('Year', 'Forecasted CO₂ Emissions (g/km)', source=src, line_width=2)
-            p.yaxis.formatter = NumeralTickFormatter(format="0.0")
-            st.bokeh_chart(p)
-        st.success("Forecasting completed!")
 
 
 def forecast_co2_emissions_personal(car_info):
@@ -925,20 +914,12 @@ def forecast_co2_emissions_personal(car_info):
             "Forecasted CO₂ Emissions (g/km)": predictions
         })
         forecast_df['Forecasted Carbon Tax (NT$)/km'] = forecast_df['Forecasted CO₂ Emissions (g/km)'].apply(
+        st.line_chart(forecast_df.set_index('Year')['Forecasted CO₂ Emissions (g/km)'])
             lambda x: calculate_carbon_tax(x, 300)
         )
 
         # Display
         st.dataframe(forecast_df)
-        src = ColumnDataSource(forecast_df)
-        p = figure(title="Personal CO₂ Emissions Forecast", x_axis_label="Year", y_axis_label="g/km",
-                   width=700, height=400)
-        p.line('Year', 'Forecasted CO₂ Emissions (g/km)', source=src, line_width=2)
-        p.yaxis.formatter = NumeralTickFormatter(format="0.0")
-        st.bokeh_chart(p)
-
-
-def upload_predict_page():
     st.header("Personal CO2 Calculator 🚗💨")
     
     # Load the dataset

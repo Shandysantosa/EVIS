@@ -6,7 +6,6 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, MultiHeadAttention, LayerNormalization, Dropout, Input
-from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.layers import Conv1D, LSTM, Flatten
 import plotly.express as px
 from datetime import datetime
@@ -279,15 +278,15 @@ if "scaler_y_cnn" not in st.session_state:
     st.session_state.scaler_y_cnn = None
 
 
+
+
 # Helper function: Is it winter in Taiwan?
 def is_winter_in_taiwan(modified_date):
     return modified_date.month in [12, 1, 2]
 
-
 # Add this function to calculate carbon tax
 def calculate_carbon_tax(co2_emissions, tax_rate_per_ton):
     return co2_emissions * tax_rate_per_ton / 1000000  # Convert emissions from g/km to tons/km
-
 
 # Load data
 @st.cache_data
@@ -305,12 +304,11 @@ def load_data(file_path):
     )
     return df
 
-
 # Global Dataset Path
 FILE_PATH = './Vehicles_10-24.csv'
+
 # Load data
 data = load_data(FILE_PATH)
-
 
 def main():
     # Page title and description
@@ -329,7 +327,6 @@ def main():
         visualization_page(data)
     elif page == "Personal CO2 Calculator":
         upload_predict_page()
-
 
 def visualization_page(df):
     
@@ -379,7 +376,7 @@ def visualization_page(df):
     # Get system metrics
     system_load = psutil.cpu_percent()
     memory_usage = psutil.virtual_memory().percent
-    api_status = "Online" 
+    api_status = "Online"  # Placeholder for actual API check
 
     # Determine colors
     system_load_color = "var(--success-color)" if system_load < 50 else "var(--warning-color)" if system_load < 80 else "var(--error-color)"
@@ -549,16 +546,22 @@ def visualization_page(df):
     forecast_co2_emissions(data)
 
     
+
+
+
+
+
+
+
 # Sample DataFrame structure for testing
-def prepare_sequence_data(df, seq_len=5):
+def prepare_sequence_data(df, seq_len=5, target='co2TailpipeGkm_converted'):
     df = df.sort_values('year')
     features = ['displ', 'city08', 'highway08', 'comb08']
-    target = 'co2TailpipeGkm_converted'
     X_seq, y_seq, years = [], [], []
 
     grouped = df.groupby('year')
-
     years_available = sorted(grouped.groups.keys())
+
     for i in range(len(years_available) - seq_len):
         window_years = years_available[i:i+seq_len+1]
         window_df = df[df['year'].isin(window_years)]
@@ -580,6 +583,22 @@ def prepare_sequence_data(df, seq_len=5):
 
     return np.array(X_seq), np.array(y_seq), years
 
+def compute_accuracy_metrics(model, X_test, y_test, scaler_y):
+    # Predict scaled
+    y_pred_scaled = model.predict(X_test)
+
+    # Inverse transform to original scale
+    y_test_orig = scaler_y.inverse_transform(y_test)
+    y_pred_orig = scaler_y.inverse_transform(y_pred_scaled)
+
+    # Compute metrics
+    mse = mean_squared_error(y_test_orig, y_pred_orig)
+    mae = mean_absolute_error(y_test_orig, y_pred_orig)
+    r2 = r2_score(y_test_orig, y_pred_orig)
+
+    return mse, mae, r2
+
+
 # Sample output for structure validation
 df_sample = pd.DataFrame({
     'year': np.tile(np.arange(2010, 2025), 2),
@@ -589,7 +608,6 @@ df_sample = pd.DataFrame({
     'comb08': np.random.rand(30),
     'co2TailpipeGkm_converted': np.random.rand(30) * 100
 })
-
 
 def train_cnn_lstm_model(X_seq, y_seq, seq_len=5):
     # Flatten & scale X
@@ -634,26 +652,26 @@ def train_cnn_lstm_model(X_seq, y_seq, seq_len=5):
     return model, scaler_X, scaler_y, mse, mae, r2
 
 
+
 def train_transformer_model(X_seq, y_seq, seq_len=5):
     # Flatten & scale X
     n_samples, _, n_feats = X_seq.shape
     flat_X = X_seq.reshape(-1, n_feats)
     scaler_X = MinMaxScaler().fit(flat_X)
-    scaled_flat_X = scaler_X.transform(flat_X)
-    X_scaled = scaled_flat_X.reshape(n_samples, seq_len, n_feats)
+    X_scaled = scaler_X.transform(flat_X).reshape(n_samples, seq_len, n_feats)
 
     # Scale y
     scaler_y = MinMaxScaler().fit(y_seq.reshape(-1,1))
     y_scaled = scaler_y.transform(y_seq.reshape(-1,1))
 
-    # save scalers
+    # Store scalers
     st.session_state.scaler_X_transformer = scaler_X
     st.session_state.scaler_y_transformer = scaler_y
 
-    # train/test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_scaled, y_scaled, test_size=0.2, random_state=42)
+    # Split
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y_scaled, test_size=0.2, random_state=42)
 
+    # Build model
     inp = Input((seq_len, n_feats))
     x = Dense(64, activation="relu")(inp)
     x = LayerNormalization()(x)
@@ -663,17 +681,21 @@ def train_transformer_model(X_seq, y_seq, seq_len=5):
 
     model = Model(inp, out)
     model.compile("adam", "mse")
-    es = EarlyStopping("val_loss", patience=10, restore_best_weights=True)
     model.fit(X_train, y_train, validation_data=(X_test, y_test),
-              epochs=100, batch_size=32, callbacks=[es], verbose=0)
+              epochs=100, batch_size=32,
+              callbacks=[EarlyStopping("val_loss", patience=10, restore_best_weights=True)],
+              verbose=0)
 
-    # Predictions & accuracy metrics
-    preds = model.predict(X_test).flatten()
-    mse = mean_squared_error(y_test, preds)
-    mae = mean_absolute_error(y_test, preds)
-    r2 = r2_score(y_test, preds)
+    # ➕ Compute and return accuracy metrics
+    mse, mae, r2 = compute_accuracy_metrics(model, X_test, y_test, scaler_y)
 
     return model, scaler_X, scaler_y, mse, mae, r2
+
+
+
+
+
+
 
 
 def forecast_co2_emissions(df):
@@ -687,38 +709,44 @@ def forecast_co2_emissions(df):
     if st.button("Forecast"):
         if model_type == "Transformer":
             if st.session_state.transformer_model is None:
-                m, scaler_X, scaler_y, mse, mae, r2 = train_transformer_model(X_seq, y_seq, seq_len)
+                m, sx, sy, mse, mae, r2 = train_transformer_model(X_seq, y_seq, seq_len)
                 st.session_state.transformer_model = m
-                st.session_state.scaler_X_transformer = scaler_X
-                st.session_state.scaler_y_transformer = scaler_y
+                st.session_state.scaler_X_transformer = sx
+                st.session_state.scaler_y_transformer = sy
+                st.session_state.metrics_transformer = (mse, mae, r2)
+                model = m
             else:
-                m = st.session_state.transformer_model
+                model = st.session_state.transformer_model
                 scaler_X = st.session_state.scaler_X_transformer
                 scaler_y = st.session_state.scaler_y_transformer
-
-            st.subheader("📊 Transformer Model Accuracy Metrics")
-            st.write(f"**Mean Squared Error (MSE):** {mse:.3f}")
-            st.write(f"**Mean Absolute Error (MAE):** {mae:.3f}")
-            st.write(f"**R² Score:** {r2:.3f}")
-
-        else:  # CNN-LSTM
-            if st.session_state.cnn_lstm_model is None:
-                m, scaler_X, scaler_y, mse, mae, r2 = train_cnn_lstm_model(X_seq, y_seq, seq_len)
-                st.session_state.cnn_lstm_model = m
-                st.session_state.scaler_X_cnn = scaler_X
-                st.session_state.scaler_y_cnn = scaler_y
-            else:
-                m = st.session_state.cnn_lstm_model
-                scaler_X = st.session_state.scaler_X_cnn
-                scaler_y = st.session_state.scaler_y_cnn
-
-            st.subheader("📊 CNN-LSTM Model Accuracy Metrics")
-            st.write(f"**Mean Squared Error (MSE):** {mse:.3f}")
-            st.write(f"**Mean Absolute Error (MAE):** {mae:.3f}")
-            st.write(f"**R² Score:** {r2:.3f}")
-
-        model = m  # assign for later use
+                mse, mae, r2 = st.session_state.metrics_transformer if hasattr(st.session_state, 'metrics_transformer') else (0, 0, 0)
         
+                # Display metrics
+                st.subheader("📊 Transformer Model Metrics")
+                st.write(f"**MSE**: {mse:.2f}")
+                st.write(f"**MAE**: {mae:.2f}")
+                st.write(f"**R²**: {r2:.2f}")
+        else:
+            if st.session_state.cnn_lstm_model is None:
+                m, sx, sy, mse, mae, r2 = train_cnn_lstm_model(X_seq, y_seq, seq_len)
+                st.session_state.cnn_lstm_model = m
+                st.session_state.scaler_X_cnn = sx
+                st.session_state.scaler_y_cnn = sy
+                st.session_state.metrics_cnn = (mse, mae, r2)
+                model = m
+                scaler_X = sx
+                scaler_y = sy
+            else:
+                model = st.session_state.cnn_lstm_model
+                scaler_X = st.session_state.scaler_X_cnn
+                scaler_y = st.session_state.scaler_y_cnn  
+                mse, mae, r2 = st.session_state.metrics_cnn if hasattr(st.session_state, 'metrics_cnn') else (0, 0, 0)
+
+
+         
+        
+        
+
         st.write(f"### Currently Using Model: {model_type}")
         
         # find the last 5 real years
@@ -781,6 +809,7 @@ def forecast_co2_emissions(df):
             lambda x: calculate_carbon_tax(x, 300)
         )
 
+
         # Display results
         c1, c2 = st.columns(2)
         with c1:
@@ -796,137 +825,115 @@ def forecast_co2_emissions(df):
             p.line('Year', 'Forecasted CO₂ Emissions (g/km)', source=src, line_width=2)
             p.yaxis.formatter = NumeralTickFormatter(format="0.0")
             st.bokeh_chart(p)
-        st.success("Forecasting completed! 🎉")
+        st.success("Forecasting completed!")
 
 
 def forecast_co2_emissions_personal(car_info):
-    st.header("Forecasted CO2 Emissions for the Next 5 Years (2025-2029) 📈")
-    
-    # Prepare data for the model
+    st.header("Forecasted CO₂ Emissions for the Next 5 Years (2025–2029) 🚗📈")
+
+    # Use global dataset
     co2_data = data[['year', 'displ', 'city08', 'highway08', 'comb08', 'adjusted_co2TailpipeGkm_converted']].dropna()
-    X = co2_data[['year', 'displ', 'city08', 'highway08', 'comb08']]
-    y = co2_data['adjusted_co2TailpipeGkm_converted']
-    
-    # Normalize the input features
-    scaler_X = MinMaxScaler()
-    scaler_y = MinMaxScaler()
-    X_scaled = scaler_X.fit_transform(X)
-    y_scaled = scaler_y.fit_transform(y.values.reshape(-1, 1))
-    
-    # Reshape for input
-    seq_len = 1  # Adjust the sequence length based on the data
-    X_seq = X_scaled.reshape(-1, seq_len, X_scaled.shape[1])
-    y_seq = y_scaled
-    
-    # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(X_seq, y_seq, test_size=0.2, random_state=42)
-    
-    model_type = st.sidebar.radio(
-        "Select Model for Forecasting", 
-        ("Transformer", "CNN-LSTM")
-    )
+    seq_len = 5
+    features = ['displ', 'city08', 'highway08', 'comb08']
+    target = 'adjusted_co2TailpipeGkm_converted'  # Make sure this matches the column in co2_data
 
-    if st.button("Forecast"):
-        if st.session_state.transformer_model is None or st.session_state.cnn_lstm_model is None:
-            st.write("Training models. Please wait...")
-            
-            # Train and save Transformer model
-            transformer_model = build_transformer_model(input_dim=X_seq.shape[2], seq_len=seq_len)
-            transformer_model.fit(
-                X_train, y_train,
-                validation_data=(X_test, y_test),
-                epochs=50,
-                batch_size=32,
-                verbose=1
-            )
-            st.session_state.transformer_model = transformer_model
+    # Prepare sequence data
+    X_seq, y_seq, _ = prepare_sequence_data(co2_data, seq_len, target=target)
 
-            # Train and save CNN-LSTM model
-            cnn_lstm_model = build_cnn_lstm_model(input_dim=X_seq.shape[2], seq_len=seq_len)
-            cnn_lstm_model.fit(
-                X_train, y_train,
-                validation_data=(X_test, y_test),
-                epochs=50,
-                batch_size=32,
-                verbose=1
-            )
-            st.session_state.cnn_lstm_model = cnn_lstm_model
-        else:
-            st.write("Models are already loaded.")
+    # Model selection
+    model_type = st.sidebar.radio("Select Model for Personal Forecasting", ("Transformer", "CNN-LSTM"))
 
-        # Select the model
+    if st.button("Forecast Personal CO₂"):
+        # Train if needed
         if model_type == "Transformer":
-            model = st.session_state.transformer_model
-        elif model_type == "CNN-LSTM":
-            model = st.session_state.cnn_lstm_model
+            if st.session_state.transformer_model is None:
+                model, scaler_X, scaler_y, mse, mae, r2 = train_transformer_model(X_seq, y_seq, seq_len)
+                st.session_state.transformer_model = model
+                st.session_state.scaler_X_transformer = scaler_X
+                st.session_state.scaler_y_transformer = scaler_y
+                st.session_state.metrics_transformer = (mse, mae, r2)
+            else:
+                model = st.session_state.transformer_model
+                scaler_X = st.session_state.scaler_X_transformer
+                scaler_y = st.session_state.scaler_y_transformer
+                mse, mae, r2 = st.session_state.metrics_transformer if hasattr(st.session_state, 'metrics_transformer') else (0, 0, 0)
+            
+            # Display metrics
+            st.subheader("📊 Transformer Model Metrics")
+            st.write(f"**MSE**: {mse:.2f}")
+            st.write(f"**MAE**: {mae:.2f}")
+            st.write(f"**R²**: {r2:.2f}")
+        else:
+            if st.session_state.cnn_lstm_model is None:
+                model, scaler_X, scaler_y, mse, mae, r2 = train_cnn_lstm_model(X_seq, y_seq, seq_len)
+                st.session_state.cnn_lstm_model = model
+                st.session_state.scaler_X_cnn = scaler_X
+                st.session_state.scaler_y_cnn = scaler_y
+                st.session_state.metrics_cnn = (mse, mae, r2)
+            else:
+                model = st.session_state.cnn_lstm_model
+                scaler_X = st.session_state.scaler_X_cnn
+                scaler_y = st.session_state.scaler_y_cnn
+                mse, mae, r2 = st.session_state.metrics_cnn if hasattr(st.session_state, 'metrics_cnn') else (0, 0, 0)
+            
+            # Display metrics
+            st.subheader("📊 CNN-LSTM Model Metrics")
+            st.write(f"**MSE**: {mse:.2f}")
+            st.write(f"**MAE**: {mae:.2f}")
+            st.write(f"**R²**: {r2:.2f}")
 
-        if "current_model_type" not in st.session_state:
-            st.session_state.current_model_type = None  # Initialize model type
+        # Initial sequence using average of last 5 years
+        last_years = sorted(co2_data['year'].unique())[-seq_len:]
+        last_window = np.array([
+            co2_data[co2_data['year'] == y][features].mean().values for y in last_years
+        ])
 
-        if model_type != st.session_state.current_model_type:
-            st.session_state.model = None  # Reset model if type changes
-            st.session_state.current_model_type = model_type  # Update model type
+        future_years = list(range(2025, 2030))
+        predictions = []
 
-        st.write(f"### Currently Using Model: {model_type}")
+        current_window = last_window.copy()
+        for i, year in enumerate(future_years):
+            # Prepare input
+            flat_input = current_window.reshape(-1, len(features))
+            scaled_input = scaler_X.transform(flat_input)
+            reshaped = scaled_input.reshape(1, seq_len, len(features))
 
-        # Define future years
-        future_years = np.arange(2025, 2030)
-        avg_values = X.mean(axis=0)  
-        future_data = pd.DataFrame({
-            'year': future_years,
-            'displ': np.linspace(car_info['displ'] * 0.9, car_info['displ'] * 1.1, len(future_years)),
-            'city08': np.linspace(car_info['city08'] * 0.9, car_info['city08'] * 1.1, len(future_years)),
-            'highway08': np.linspace(car_info['highway08'] * 0.9, car_info['highway08'] * 1.1, len(future_years)),
-            'comb08': np.linspace(car_info['comb08'] * 0.9, car_info['comb08'] * 1.1, len(future_years))
-        })
+            # Predict and inverse scale
+            pred_scaled = model.predict(reshaped)[0][0]
+            pred = scaler_y.inverse_transform([[pred_scaled]])[0][0]
 
-        # Normalize and reshape future data for predictions
-        future_scaled = scaler_X.transform(future_data)
-        future_seq = future_scaled.reshape(-1, seq_len, X_seq.shape[2])
-        predictions_scaled = model.predict(future_seq).flatten()
+            # Apply winter adjustment
+            if is_winter_in_taiwan(datetime(year, 12, 1)):
+                pred *= 1.1
 
-        # Reverse scaling to get original units
-        predictions = scaler_y.inverse_transform(predictions_scaled.reshape(-1, 1)).flatten()
+            predictions.append(pred)
 
-        # Adjust emissions for Taiwan's winter (December-February)
-        adjusted_predictions = [
-            prediction * 1.1 if is_winter_in_taiwan(datetime(year, 12, 1)) else prediction
-            for year, prediction in zip(future_years, predictions)
-        ]
+            if i < len(future_years) - 1:
+                # Create a new row based on user's car + 1% yearly drift
+                synthetic = np.array([
+                    car_info['displ'] * (1 + 0.01 * (i + 1)),
+                    car_info['city08'] * (1 + 0.01 * (i + 1)),
+                    car_info['highway08'] * (1 + 0.01 * (i + 1)),
+                    car_info['comb08'] * (1 + 0.01 * (i + 1))
+                ])
+                current_window = np.roll(current_window, -1, axis=0)
+                current_window[-1] = synthetic
 
-        # Initialize forecast DataFrame with predictions
+        # Build DataFrame
         forecast_df = pd.DataFrame({
-            'Year': future_years,
-            'Forecasted CO2 Emissions (g/km)': adjusted_predictions
+            "Year": future_years,
+            "Forecasted CO₂ Emissions (g/km)": predictions
         })
-
-        # Apply annual increase of 1% to the forecasted emissions
-        for i in range(1, len(future_years)):
-            forecast_df.at[i, 'Forecasted CO2 Emissions (g/km)'] = forecast_df.at[i-1, 'Forecasted CO2 Emissions (g/km)'] * 1.01
-
-
-        # Calculate carbon tax for the forecasted emissions
-        forecast_df['Forecasted Carbon Tax (NT$)/km'] = forecast_df['Forecasted CO2 Emissions (g/km)'].apply(
+        forecast_df['Forecasted Carbon Tax (NT$)/km'] = forecast_df['Forecasted CO₂ Emissions (g/km)'].apply(
             lambda x: calculate_carbon_tax(x, 300)
         )
 
-        # Display results
+        # Display
         st.dataframe(forecast_df)
-        
-
-        # Bokeh Chart for Visualization
-        source = ColumnDataSource(forecast_df)
-        p = figure(
-            title="CO2 Emissions Forecast",
-            x_axis_label="Year",
-            y_axis_label="Value",
-            width=700,
-            height=400,
-        )
-
-        # Add CO2 Emissions to the line chart
-        p.line('Year', 'Forecasted CO2 Emissions (g/km)', source=source, line_width=2, color="blue", legend_label="CO2 Emissions")
-
+        src = ColumnDataSource(forecast_df)
+        p = figure(title="Personal CO₂ Emissions Forecast", x_axis_label="Year", y_axis_label="g/km",
+                   width=700, height=400)
+        p.line('Year', 'Forecasted CO₂ Emissions (g/km)', source=src, line_width=2)
         p.yaxis.formatter = NumeralTickFormatter(format="0.0")
         st.bokeh_chart(p)
 

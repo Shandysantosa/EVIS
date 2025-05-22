@@ -1,0 +1,1 @@
+{"input_shape": [3, 5], "model_type": "rnn", "compile_args": {"optimizer": "adam", "loss": "mean_squared_error", "metrics": ["mean_absolute_error"]}}

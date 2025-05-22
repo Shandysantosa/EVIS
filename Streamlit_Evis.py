@@ -828,10 +828,15 @@ def visualization_page(df):
     with col2:
         # Engine Size vs CO2 Emissions
         st.header("Engine Size vs CO₂ Emissions")
-        scatter_chart = px.scatter(filtered_df, x='displ', y='co2TailpipeGkm_converted',
-                                title='Engine Size vs CO₂ Emissions',
-                                labels={'displ': 'Engine Displacement (L)', 'co2TailpipeGkm_converted': 'CO₂ Emissions (g/km)'},
-                                trendline='ols')
+        try:
+            scatter_chart = px.scatter(filtered_df, x='displ', y='co2TailpipeGkm_converted',
+                                    title='Engine Size vs CO₂ Emissions',
+                                    labels={'displ': 'Engine Displacement (L)', 'co2TailpipeGkm_converted': 'CO₂ Emissions (g/km)'})
+        except ImportError:
+            st.warning("Statsmodels package not found. Trendline functionality is disabled.")
+            scatter_chart = px.scatter(filtered_df, x='displ', y='co2TailpipeGkm_converted',
+                                    title='Engine Size vs CO₂ Emissions',
+                                    labels={'displ': 'Engine Displacement (L)', 'co2TailpipeGkm_converted': 'CO₂ Emissions (g/km)'})
         st.plotly_chart(scatter_chart)
 
     # Forecasting
